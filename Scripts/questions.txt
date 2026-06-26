@@ -111,19 +111,20 @@
     "ifNoGoToStep": null,
     "trials": [
       {
-        "name": "SATURN (Ng)",
-        "contact": "RC Shuhira — 905 870 2090",
-        "desc": "Testing statin continuation vs. discontinuation in patients with lobar ICH taking statin at time of ICH",
+        "name": "INTERCEPT (Katsanos)",
+        "contact": "RC – Kanchana- 905 870 2203",
+        "desc": "B/L Carotid Implants for PreveNtion of STrokE ReCurrEnce from Large Vessel Occlusion in\nAtrial Fibrillation Patients Treated with Oral Anticoagulation",
         "criteria": [
-          "Within 7 days of ICH",
-          "On statin prior to ICH",
-          "Age ≥ 50 years"
+          "Documented history of clinical AF",
+          "History of ischemic stroke, including symptoms of stroke resolving within 24 hours with positive imaging,",
+          "Planned use of a Vitamin K antagonist (VKA) or a direct oral anticoagulant (DOAC)",
+          "Previously documented 50% or greater stenosis, or high-risk plaque in the opinion of the investigator"
         ]
       },
       {
         "name": "PROSPECT (Joundi)",
         "contact": "RC Shuhira — 905 870 2090",
-        "desc": "Ischemic stroke or ICH monitoring timeline data collection",
+        "desc": "No descriptive notes recorded.",
         "criteria": [
           "Ischemic stroke or ICH without pre-stroke dementia",
           "Within 7 days of index event"

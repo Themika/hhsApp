@@ -1,4 +1,3 @@
-require('update-electron-app')();
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -18,7 +17,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'Templates/index.html'));
 }
 
-// 💾 AUTOMATED BACKEND DIRECT-WRITE ENGINE
+//AUTOMATED BACKEND DIRECT-WRITE ENGINE
 ipcMain.handle('save-database-file', async (event, dataString) => {
   try {
     const targetPath = path.join(__dirname, 'Scripts', 'questions.txt');

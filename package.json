@@ -5,8 +5,17 @@
   "scripts": {
     "start": "electron ."
   },
+  "build": {
+    "appId": "com.hhs.protocol",
+    "publish": {
+      "provider": "github",
+      "owner": "Themika",
+      "repo": "hhsApp"
+    }
+  },
   "dependencies": {
     "electron": "^31.0.0",
-    "electron-updater": "^6.0.0"
+    "electron-updater": "^6.0.0",
+    "pdfjs-dist": "^6.1.200"
   }
 }

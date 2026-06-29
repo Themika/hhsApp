@@ -4,6 +4,7 @@ let currentStepTarget = null;
 // Temporary staging state holders for editing/creating step options
 let stagedTrialsArray = []; 
 let activeBulletPointsArr = []; 
+let stagedPdfData = null; // Caches Base64 file data strings securely
 let editingStepNumber = null; 
 let editingTrialIndex = null; 
 let editingBulletIndex = null; 
@@ -36,6 +37,17 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("Fetch Error details:", err);
             alert("Database Error: Cannot locate or load 'questions.txt'. Ensure the file exists inside your hhsApp/Scripts/ folder!");
         });
+
+    // Wire up file selectors on load
+    const pdfUploadInput = document.getElementById('pdfUpload');
+    if (pdfUploadInput) {
+        pdfUploadInput.addEventListener('change', handlePdfUpload);
+    }
+
+    const importTxtInput = document.getElementById('importTxtInput');
+    if (importTxtInput) {
+        importTxtInput.addEventListener('change', handleTxtImport);
+    }
 });
 
 function buildWorkflowUI() {
@@ -69,36 +81,28 @@ function buildWorkflowUI() {
     });
 }
 
-// 🔀 UNIFIED ROUTING PROMPT INTERCEPTOR (Triggered from Top Right Header Button)
 function handleUnifiedAddStepClick() {
     if (QUESTIONS_CONFIG.length === 0) {
         openControlPage(false);
         return;
     }
-
     const nextEndStepNum = QUESTIONS_CONFIG[QUESTIONS_CONFIG.length - 1].step + 1;
-    
     const choice = prompt(
         `Where would you like to place this new step?\n\n` +
         `• Press ENTER or type "${nextEndStepNum}" to add it to the VERY END.\n` +
         `• Type any number between 1 and ${QUESTIONS_CONFIG.length} to INSERT it in-between existing steps.`
     );
-
     if (choice === null) return; 
-
     const cleanChoice = choice.trim();
-    
     if (cleanChoice === "") {
         openControlPage(false);
         return;
     }
-
     const targetPos = parseInt(cleanChoice);
     if (isNaN(targetPos) || targetPos < 1 || targetPos > nextEndStepNum) {
         alert("Invalid step position selected. Action cancelled.");
         return;
     }
-
     if (targetPos === nextEndStepNum) {
         openControlPage(false);
     } else {
@@ -106,22 +110,17 @@ function handleUnifiedAddStepClick() {
     }
 }
 
-// 🗑️ DELETION ENGINE
 function deleteExistingStep(stepNum) {
     const confirmation = confirm(`Are you absolutely sure you want to delete Step #${stepNum}?\nThis will remove its trial criteria entirely and automatically fix the routing flow mapping layout for all remaining steps.`);
     if (!confirmation) return;
-
     const targetIndex = QUESTIONS_CONFIG.findIndex(q => q.step === stepNum);
     if (targetIndex === -1) return;
-
     QUESTIONS_CONFIG.splice(targetIndex, 1);
-
     QUESTIONS_CONFIG.sort((a, b) => a.step - b.step);
     QUESTIONS_CONFIG.forEach((q, idx) => {
         q.step = idx + 1;
         q.ifNoGoToStep = (idx < QUESTIONS_CONFIG.length - 1) ? (idx + 2) : null;
     });
-
     commitDatabaseChangesToDisk();
     buildWorkflowUI();
 }
@@ -153,23 +152,66 @@ function displayTrialPayload(trialsArray, nextStepPointer) {
     currentStepTarget = nextStepPointer;
     badge.textContent = `${trialsArray ? trialsArray.length : 0} Target Trial Match(es)`;
 
+    // Cache match objects into global scope for references
+    window.activeMatchesRuntimeCache = trialsArray || [];
+
     if(!trialsArray || trialsArray.length === 0) {
         contentArea.innerHTML = `<div class="trial-panel">No active open trial profiles map directly to this setting.</div>`;
     } else {
-        contentArea.innerHTML = trialsArray.map(trial => `
-            <div class="trial-panel">
-                <div class="trial-title-row">
-                    <span class="trial-name">${trial.name}</span>
-                    <span class="trial-contact">${trial.contact}</span>
+        contentArea.innerHTML = trialsArray.map((trial, index) => `
+            <div class="trial-panel" style="margin-bottom: 15px; padding: 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                <div class="trial-title-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span class="trial-name" style="font-weight: bold; font-size: 16px; color: #1e3a8a;">${trial.name}</span>
+                    <span class="trial-contact" style="font-size: 13px; color: #64748b;">${trial.contact}</span>
                 </div>
-                <div class="trial-desc">${trial.desc}</div>
-                <ul class="trial-crit-list">${trial.criteria.map(c => `<li>${c}</li>`).join('')}</ul>
+                <div class="trial-desc" style="font-size: 14px; color: #334155; margin-bottom: 10px;">${trial.desc}</div>
+                
+                ${trial.criteria && trial.criteria.length > 0 ? `
+                    <ul class="trial-crit-list" style="margin-bottom: 10px; padding-left: 20px;">
+                        ${trial.criteria.map(c => `<li style="font-size: 13px; color: #475569; margin-bottom: 2px;">${c}</li>`).join('')}
+                    </ul>
+                ` : ''}
+
+                ${trial.pdfData ? `
+                    <div class="pdf-action-block" style="margin-top: 12px; border-top: 1px dashed #cbd5e1; padding-top: 10px;">
+                        <button type="button" class="ctrl-btn" style="background: #2563eb; color: white; padding: 8px 14px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;" onclick="openFullscreenPdfViewer(${index})">
+                            📄 View Full Screen Protocol Document
+                        </button>
+                    </div>
+                ` : ''}
             </div>
         `).join('');
     }
     resultsCard.classList.remove('hidden');
     continueBtn.classList.toggle('hidden', nextStepPointer === null);
 }
+
+// Overlay Framework Handlers
+window.openFullscreenPdfViewer = function(cachedIndex) {
+    const trialObj = window.activeMatchesRuntimeCache ? window.activeMatchesRuntimeCache[cachedIndex] : null;
+    if (!trialObj || !trialObj.pdfData) {
+        alert("Execution Error: No protocol asset string mapped for this entry reference.");
+        return;
+    }
+    const overlay = document.getElementById('fullscreenPdfOverlay');
+    const frame = document.getElementById('fullscreenPdfFrame');
+    const titleLabel = document.getElementById('fullscreenPdfTitle');
+    
+    if (overlay && frame && titleLabel) {
+        titleLabel.textContent = `Protocol Reference Map — ${trialObj.name}`;
+        frame.src = trialObj.pdfData;
+        overlay.style.display = 'flex';
+    }
+};
+
+window.closeFullscreenPdfViewer = function() {
+    const overlay = document.getElementById('fullscreenPdfOverlay');
+    const frame = document.getElementById('fullscreenPdfFrame');
+    if (overlay && frame) {
+        overlay.style.display = 'none';
+        frame.src = "";
+    }
+};
 
 function openControlPage(isEditMode = false, targetStepId = null, insertionPosition = null) {
     document.getElementById('screeningView').classList.add('hidden');
@@ -225,6 +267,7 @@ function closeControlPage() {
     delete document.getElementById('autoStepBadge').dataset.isInsertion;
     stagedTrialsArray = [];
     activeBulletPointsArr = [];
+    stagedPdfData = null;
     editingStepNumber = null;
     editingTrialIndex = null;
     editingBulletIndex = null;
@@ -261,9 +304,6 @@ function renderBulletDraftPreview() {
     `).join('');
 }
 
-
-
-
 function editDraftBullet(index) {
     editingBulletIndex = index;
     const field = document.getElementById('bulletInput');
@@ -294,10 +334,20 @@ function editOptionFromStepQueue(index) {
     document.getElementById('tName').value = trial.name;
     document.getElementById('tContact').value = trial.contact;
     document.getElementById('tDesc').value = trial.desc;
-    activeBulletPointsArr = [...trial.criteria];
-    editingBulletIndex = null;
     
+    activeBulletPointsArr = trial.criteria ? [...trial.criteria] : [];
     renderBulletDraftPreview();
+
+    stagedPdfData = trial.pdfData || null;
+    const pdfViewer = document.getElementById('pdfViewer');
+    if (stagedPdfData && pdfViewer) {
+        pdfViewer.innerHTML = `<iframe src="${stagedPdfData}" style="width: 100%; height: 300px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
+        document.getElementById('contentModeSwitcher').value = 'pdf';
+    } else {
+        document.getElementById('contentModeSwitcher').value = 'bullets';
+    }
+    toggleContentMode();
+    
     document.getElementById('trialDraftingCard').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -315,7 +365,8 @@ function commitOptionToStepQueue() {
         name: name,
         contact: contact,
         desc: desc,
-        criteria: [...activeBulletPointsArr]
+        criteria: [...activeBulletPointsArr],
+        pdfData: stagedPdfData
     };
 
     if (editingTrialIndex !== null) {
@@ -340,7 +391,9 @@ function renderQueuedTrialsList() {
             <div class="queued-item-meta">
                 <strong>${trial.name}</strong> <span style="color:#64748b; font-size:12px;">(${trial.contact})</span>
                 <div style="font-size:12px; color:#475569; margin-top:2px;">${trial.desc}</div>
-                <div style="font-size:11px; color:#3b82f6; margin-top:2px;">• Includes ${trial.criteria.length} inclusion bullet points</div>
+                <div style="font-size:11px; color:#3b82f6; margin-top:2px;">
+                    ${trial.pdfData ? '📄 Linked directly to internal reference protocol document.' : `• Includes ${trial.criteria ? trial.criteria.length : 0} criteria items.`}
+                </div>
             </div>
             <div class="queued-item-control-buttons">
                 <button type="button" class="edit-option-inline-btn" onclick="editOptionFromStepQueue(${index})">✏️ Edit Option</button>
@@ -363,10 +416,20 @@ function clearDraftOptionForm() {
     document.getElementById('tContact').value = "";
     document.getElementById('tDesc').value = "";
     document.getElementById('bulletInput').value = "";
+    const fileSelectorInput = document.getElementById('pdfUpload');
+    if (fileSelectorInput) fileSelectorInput.value = "";
+    
     activeBulletPointsArr = [];
+    stagedPdfData = null;
     editingTrialIndex = null;
     editingBulletIndex = null;
     document.getElementById('bulletPreviewList').innerHTML = "";
+    
+    const pdfViewer = document.getElementById('pdfViewer');
+    if (pdfViewer) {
+        pdfViewer.innerHTML = `<p style="color: #64748b; text-align: center; padding-top: 80px;">No document uploaded yet. Select a PDF file above to load the internal workflow previewer.</p>`;
+    }
+
     document.querySelector('.add-bullet-btn').textContent = "+ Add Bullet";
     document.getElementById('trialDraftingCard').classList.remove('editing-active-pulse');
     document.getElementById('trialFormActionHeading').innerHTML = "➕ Add / Draft a Trial Option";
@@ -415,7 +478,6 @@ function saveNewStepAndReturn() {
     });
 
     commitDatabaseChangesToDisk();
-
     buildWorkflowUI();
     closeControlPage();
 
@@ -432,7 +494,7 @@ function commitDatabaseChangesToDisk() {
     if (window.electronAPI && window.electronAPI.saveData) {
         window.electronAPI.saveData(updatedDataString)
             .then(result => {
-                if (!result.success) alert("Automated backend disk write error: " + result.error);
+                if (result && !result.success) alert("Automated backend disk write error: " + result.error);
             });
     }
 }
@@ -445,6 +507,47 @@ function downloadTxtFile() {
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+}
+
+// 📂 TEXT FILE METADATA IMPORT INTERCEPTOR ENGINE
+function triggerTxtImport() {
+    document.getElementById('importTxtInput').click();
+}
+
+function handleTxtImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedPayload = JSON.parse(e.target.result);
+            if (!Array.isArray(importedPayload)) {
+                throw new Error("Target payload structural matrix must be formatted as an array list sequence.");
+            }
+
+            // Bind parsed dataset structure directly into global context schema configuration
+            QUESTIONS_CONFIG = importedPayload;
+            QUESTIONS_CONFIG.sort((a, b) => a.step - b.step);
+
+            // Re-sequence structural flow pointers safely
+            QUESTIONS_CONFIG.forEach((q, idx) => {
+                q.ifNoGoToStep = (idx < QUESTIONS_CONFIG.length - 1) ? (QUESTIONS_CONFIG[idx + 1].step) : null;
+            });
+
+            commitDatabaseChangesToDisk();
+            buildWorkflowUI();
+            hideResultsPanel();
+            
+            alert("📂 Configuration File Successfully Imported! Your screening workflow has been refreshed.");
+        } catch (err) {
+            console.error("Import failure execution route trace logic exception:", err);
+            alert("Import Failure: Invalid text dataset format. Please ensure that you select a valid configuration text file exported from this workflow app.");
+        }
+        // Flush structural input state reference to allow re-selection
+        event.target.value = "";
+    };
+    reader.readAsText(file);
 }
 
 function advanceWorkflow() { if (currentStepTarget) activateStepCard(currentStepTarget); hideResultsPanel(); }
@@ -468,3 +571,32 @@ function clearDownstreamCards(fromStepNum) {
 }
 function hideResultsPanel() { document.getElementById('cardResults').classList.add('hidden'); }
 function resetWorkflowEngine() { buildWorkflowUI(); hideResultsPanel(); }
+
+function toggleContentMode() {
+    const mode = document.getElementById('contentModeSwitcher').value;
+    const bulletContainer = document.getElementById('bulletModeContainer');
+    const pdfContainer = document.getElementById('pdfModeContainer');
+    
+    if (mode === 'pdf') {
+        bulletContainer.classList.add('hidden');
+        pdfContainer.classList.remove('hidden');
+    } else {
+        bulletContainer.classList.remove('hidden');
+        pdfContainer.classList.add('hidden');
+    }
+}
+
+function handlePdfUpload(event) {
+    const file = event.target.files[0];
+    if (!file || file.type !== 'application/pdf') return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        stagedPdfData = e.target.result;
+        const pdfViewer = document.getElementById('pdfViewer');
+        if (pdfViewer) {
+            pdfViewer.innerHTML = `<iframe src="${stagedPdfData}" style="width: 100%; height: 350px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
+        }
+    };
+    reader.readAsDataURL(file);
+}

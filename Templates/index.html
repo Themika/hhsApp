@@ -8,22 +8,23 @@
 </head>
 <body>
 
-    <!-- PRIMARY SCREENING DASHBOARD VIEW -->
     <div class="dashboard-container" id="screeningView">
         <header class="dash-header">
             <div class="brand">
                 <span class="pulse-icon"></span>
                 <h1>HHS Clinical Trials Flow Engine</h1>
             </div>
-            <div class="header-controls">
+            <div class="header-controls" style="display: flex; gap: 8px; align-items: center;">
+                <input type="file" id="importTxtInput" accept=".txt,application/json" style="display: none;">
+                
+                <button type="button" class="ctrl-btn" style="background: #0284c7; color: white;" onclick="triggerTxtImport()">📂 Import TXT</button>
                 <button type="button" class="ctrl-btn save-btn" onclick="downloadTxtFile()">Export TXT</button>
-                <button type="button" class="ctrl-btn add-trigger" onclick="openControlPage(false)">➕ Add Step</button>
+                <button type="button" class="ctrl-btn add-trigger" onclick="handleUnifiedAddStepClick()">➕ Add Step</button>
             </div>
         </header>
 
         <main class="dash-content" id="dynamicQuestionsContainer">
-            <!-- Dynamically populated from questions.txt -->
-        </main>
+            </main>
 
         <div class="dash-content">
             <div class="results-wrapper hidden" id="cardResults">
@@ -44,8 +45,7 @@
     </div>
 
 
-    <!-- DEDICATED CONTROL PAGE VIEW (CREATOR & TRIAL-LEVEL EDITOR MODE) -->
-    <div class="dashboard-container hidden" id="creatorView">
+    <div class="dashboard-container hidden" id="creatorView" style="position: relative; z-index: 10;">
         <header class="dash-header creator-header">
             <div class="brand">
                 <h1 id="pageViewModeTitle">Protocol Stage Configurator</h1>
@@ -61,20 +61,20 @@
             </div>
 
             <div class="management-form">
-                <!-- SECTION 1: CORE ROUTING QUESTION -->
                 <div class="form-section">
                     <h3>1. Core Step Parameters</h3>
                     <div class="form-grid">
-                        <label class="full-width">Card Section Title
-                            <input type="text" id="newTitle" placeholder="e.g., Diagnosis Verification (E)">
-                        </label>
-                        <label class="full-width">Question / Clinical Prompt Text
-                            <input type="text" id="newPrompt" placeholder="e.g., Is there an active history of atrial fibrillation?">
-                        </label>
+                        <div class="form-group full-width" style="margin-bottom: 15px;">
+                            <label for="newTitle" style="display: block; margin-bottom: 6px; font-weight: 600; color: #334155;">Card Section Title</label>
+                            <input type="text" id="newTitle" placeholder="e.g., Diagnosis Verification (E)" style="width: 100%; box-sizing: border-box; display: block; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                        </div>
+                        <div class="form-group full-width" style="margin-bottom: 15px;">
+                            <label for="newPrompt" style="display: block; margin-bottom: 6px; font-weight: 600; color: #334155;">Question / Clinical Prompt Text</label>
+                            <input type="text" id="newPrompt" placeholder="e.g., Is there an active history of atrial fibrillation?" style="width: 100%; box-sizing: border-box; display: block; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                        </div>
                     </div>
                 </div>
 
-                <!-- SECTION 2: LIVE PREVIEW OF QUEUED TRIAL OPTIONS FOR THIS STEP -->
                 <div class="form-section">
                     <h3>2. Configured Trial Options for this Step</h3>
                     <div id="queuedTrialsContainer" class="queued-options-list">
@@ -82,40 +82,82 @@
                     </div>
                 </div>
 
-                <!-- SECTION 3: MULTI-OPTION TOOLKIT PANEL WITH EDIT STATE TRACKING -->
                 <div class="form-section trial-builder-card" id="trialDraftingCard">
-                    <h3 style="color: #2563eb;" id="trialFormActionHeading">➕ Add / Draft a Trial Option</h3>
+                    <h3 style="color: #2563eb; margin-bottom: 15px;" id="trialFormActionHeading">➕ Add / Draft a Trial Option</h3>
+                    
                     <div class="form-grid">
-                        <label>Trial Program Name
-                            <input type="text" id="tName" placeholder="e.g., TWIST-2">
-                        </label>
-                        <label>Primary Coordinator Contact Info
-                            <input type="text" id="tContact" placeholder="e.g., RC Name — 905 555 0192">
-                        </label>
-                        <label class="full-width">Trial Description Summary
-                            <textarea id="tDesc" rows="2" placeholder="Provide a brief abstract summary detailing the intent and context parameters..."></textarea>
-                        </label>
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label for="tName" style="display: block; margin-bottom: 6px; font-weight: 600; color: #334155;">Trial Program Name</label>
+                            <input type="text" id="tName" placeholder="e.g., TWIST-2" style="width: 100%; box-sizing: border-box; display: block; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label for="tContact" style="display: block; margin-bottom: 6px; font-weight: 600; color: #334155;">Primary Coordinator Contact Info</label>
+                            <input type="text" id="tContact" placeholder="e.g., RC Name — 905 555 0192" style="width: 100%; box-sizing: border-box; display: block; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                        </div>
+                        <div class="form-group full-width" style="margin-bottom: 15px;">
+                            <label for="tDesc" style="display: block; margin-bottom: 6px; font-weight: 600; color: #334155;">Trial Description Summary</label>
+                            <textarea id="tDesc" rows="2" placeholder="Provide a brief abstract summary detailing the intent and context parameters..." style="width: 100%; box-sizing: border-box; display: block; resize: vertical; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;"></textarea>
+                        </div>
                     </div>
 
-                    <div class="bullet-builder-block">
-                        <label>Inclusion Eligibility Criteria (Bullet Points for this Option)</label>
-                        <div class="bullet-input-row">
-                            <input type="text" id="bulletInput" placeholder="Type a standalone criteria condition phrase...">
-                            <button type="button" class="add-bullet-btn" onclick="addBulletPointToDraft()">+ Add Bullet</button>
+                    <div class="bullet-builder-block" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
+                        <h3 style="margin-bottom: 15px;">3. Content Source Options Configuration</h3>
+                        
+                        <div class="form-group" style="margin-bottom: 20px;">
+                            <label for="contentModeSwitcher" style="display: block; margin-bottom: 6px; font-weight: 600; color: #334155;">Select Input Method:</label>
+                            <select id="contentModeSwitcher" onchange="toggleContentMode()" style="width: 100%; max-width: 300px; padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; background: white; cursor: pointer;">
+                                <option value="bullets">Bullet Points (Criteria)</option>
+                                <option value="pdf">Upload/View PDF Reference</option>
+                            </select>
                         </div>
-                        <ul class="live-bullet-preview" id="bulletPreviewList"></ul>
+
+                        <div id="bulletModeContainer" class="mode-container">
+                            <div class="form-group full-width" style="margin-bottom: 10px;">
+                                <label for="bulletInput" style="display: block; margin-bottom: 6px; font-weight: 600; color: #334155;">Inclusion Eligibility Criteria (Bullet Points for this Option)</label>
+                                <div class="bullet-input-row" style="display: flex; gap: 8px;">
+                                    <input type="text" id="bulletInput" placeholder="Type a standalone criteria condition phrase..." style="flex: 1; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                    <button type="button" class="add-bullet-btn" onclick="addBulletPointToDraft()" style="cursor: pointer; padding: 8px 16px; background: #0f172a; color: white; border: none; border-radius: 4px; font-weight: 600;">+ Add Bullet</button>
+                                </div>
+                            </div>
+                            <ul class="live-bullet-preview" id="bulletPreviewList" style="padding-left: 0; list-style: none; margin-top: 10px;"></ul>
+                        </div>
+
+                        <div id="pdfModeContainer" class="mode-container hidden">
+                            <div class="form-group full-width">
+                                <label for="pdfUpload" style="display: block; margin-bottom: 6px; font-weight: 600; color: #334155;">Upload Reference Protocol (PDF)</label>
+                                <input type="file" id="pdfUpload" accept="application/pdf" style="display: block; margin-bottom: 10px;">
+                                <div id="pdfViewer" style="margin-top: 15px; border: 2px dashed #cbd5e1; padding: 10px; background: #f8fafc; min-height: 200px; border-radius: 6px;">
+                                    <p style="color: #64748b; text-align: center; padding-top: 80px;">No document uploaded yet. Select a PDF file above to load the internal workflow previewer.</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="option-form-actions-row">
+                    <div class="option-form-actions-row" style="margin-top: 25px; display: flex; gap: 10px;">
                         <button type="button" class="add-option-btn" id="commitTrialBtn" onclick="commitOptionToStepQueue()">Attach Option to Step Data Matrix</button>
                         <button type="button" class="ctrl-btn cancel-btn hidden" id="cancelTrialEditBtn" onclick="clearDraftOptionForm()">Cancel Edit</button>
                     </div>
                 </div>
 
-                <button type="button" class="submit-btn active-submit" id="formSubmitBtn" onclick="saveNewStepAndReturn()">Save Complete Step with Options</button>
+                <button type="button" class="submit-btn active-submit" id="formSubmitBtn" onclick="saveNewStepAndReturn()" style="margin-top: 25px;">Save Complete Step with Options</button>
             </div>
         </main>
     </div>
+
+    <div id="fullscreenPdfOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center; padding: 25px; box-sizing: border-box;">
+        <div style="background: white; width: 100%; height: 100%; max-width: 1500px; max-height: 900px; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.35);">
+            <header style="padding: 15px 25px; background: #1e3a8a; color: white; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e40af;">
+                <h3 id="fullscreenPdfTitle" style="margin: 0; font-size: 18px; font-weight: 600;">Protocol Reference Viewport</h3>
+                <button type="button" onclick="closeFullscreenPdfViewer()" style="background: #dc2626; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px; transition: background 0.2s;">
+                    ✕ Close Viewer
+                </button>
+            </header>
+            <div style="flex: 1; background: #475569; padding: 12px; display: flex; align-items: center; justify-content: center;">
+                <iframe id="fullscreenPdfFrame" src="" style="width: 100%; height: 100%; border: none; background: white; border-radius: 4px;"></iframe>
+            </div>
+        </div>
+    </div>
+
     <script src="../Scripts/script.js"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
-
+const userDataPath = app.getPath('userData'); // This is the writable location
 if (process.env.NODE_ENV === 'development') {
   autoUpdater.forceDevUpdateConfig = true;
 }
@@ -12,9 +12,8 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,    
       contextIsolation: true,
-      // 🚨 FIX: Points directly and cleanly to preload.js in your main root folder
       preload: path.join(__dirname, 'preload.js') ,
-      contextIsolation: true,                     // <-- MUST be true for contextBridge
+      contextIsolation: true,                     
       nodeIntegration: false
     }
   });
@@ -35,7 +34,7 @@ app.on('window-all-closed', () => {
 });
 ipcMain.handle('save-database-file', async (event, rawData) => {
   try {
-    const uploadDir = path.join(__dirname, 'uploads');
+    const uploadDir = path.join(userDataPath, 'uploads');
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
     // Dynamic Safe Parse: handles either raw array mutations or pre-stringified blocks smoothly
@@ -60,9 +59,9 @@ ipcMain.handle('save-database-file', async (event, rawData) => {
       });
     }
 
-    const targetPath = fs.existsSync(path.join(__dirname, 'Scripts'))
-      ? path.join(__dirname, 'Scripts', 'questions.txt')
-      : path.join(__dirname, 'questions.txt');
+    const targetPath = fs.existsSync(path.join(userDataPath, 'Scripts'))
+      ? path.join(userDataPath, 'Scripts', 'questions.txt')
+      : path.join(userDataPath, 'questions.txt');
 
     // FIX: Stringify the array safely right before writing to native fs disk layers
     const serializedOutput = JSON.stringify(questionsArray, null, 2);

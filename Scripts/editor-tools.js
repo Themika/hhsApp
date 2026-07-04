@@ -1,242 +1,150 @@
-let QUESTIONS_CONFIG = [];
-let currentStepTarget = null;
+function getEditableFieldValue(id) {
+    const element = document.getElementById(id);
+    if (!element) return "";
+    return typeof element.value === 'string' ? element.value.trim() : "";
+}
 
-// Temporary staging state holders for editing/creating step options
-let stagedTrialsArray = []; 
-let activeBulletPointsArr = []; 
-let stagedPdfData = null; // Caches Base64 file data strings securely
-let stagedPdfPath = null; // Fix: Tracks and preserves disk paths for imported files
-let editingStepNumber = null; 
-let editingTrialIndex = null; 
-let editingBulletIndex = null; 
+function setEditableFieldValue(id, value) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.value = value == null ? "" : String(value);
+}
 
-document.addEventListener("DOMContentLoaded", async () => {
-    // FIX 1: Always wire up event listeners first so early returns don't break buttons
-    document.getElementById('pdfUpload')?.addEventListener('change', handlePdfUpload);
-    document.getElementById('importTxtInput')?.addEventListener('change', handleTxtImport);
-
-    try {
-        // Attempt to load from the writable userData folder via the backend
-        if (window.electronAPI && window.electronAPI.readData) {
-            const savedData = await window.electronAPI.readData();
-            if (savedData) {
-                QUESTIONS_CONFIG = savedData;
-                buildWorkflowUI();
-                return; // Successfully loaded from persistent storage
-            }
-        }
-        
-        // Fallback: If no saved data found in userData, use the original fetch
-        let protocolPath = 'questions.txt'; 
-        if (window.location.pathname.includes('/Templates/')) protocolPath = '../Scripts/questions.txt';
-        
-        const response = await fetch(protocolPath);
-        if (!response.ok) throw new Error("Could not find configuration registry database.");
-        QUESTIONS_CONFIG = await response.json();
-        buildWorkflowUI();
-        
-    } catch (err) {
-        console.error("Initialization Error:", err);
-        alert("Database Error: Could not locate configuration data.");
+function placeCaretAtEnd(element) {
+    if (!element) return;
+    element.focus();
+    if (typeof element.setSelectionRange === 'function') {
+        const caretPos = typeof element.value === 'string' ? element.value.length : 0;
+        element.setSelectionRange(caretPos, caretPos);
     }
-});
+}
 
-function buildWorkflowUI() {
-    const container = document.getElementById("dynamicQuestionsContainer");
-    if (!container) return;
-    container.innerHTML = ""; 
-    
-    QUESTIONS_CONFIG.sort((a, b) => a.step - b.step);
-
-    QUESTIONS_CONFIG.forEach((q) => {
-        const card = document.createElement("div");
-        card.className = `step-card ${q.step === 1 ? 'active-card' : 'hidden'}`;
-        card.id = `cardStep-${q.step}`;
-        card.innerHTML = `
-            <div class="card-num">${String(q.step).padStart(2, '0')}</div>
-            <div class="question-body">
-                <div class="card-title-row" style="display: flex; justify-content: space-between; align-items: center;">
-                    <h3>${q.title}</h3>
-                    <div style="display: flex; gap: 6px;">
-                        <button type="button" class="edit-step-inline-btn" style="background: #e2e8f0; color: #334155;" onclick="openControlPage(true, ${q.step})">✏️ Edit Step & Options</button>
-                        <button type="button" class="delete-step-inline-btn" style="background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;" onclick="deleteExistingStep(${q.step})">🗑️ Delete Step</button>
-                    </div>
-                </div>
-                <p class="question-prompt">${q.prompt}</p>
-                <div class="action-buttons">
-                    <button type="button" class="btn btn-yes" id="btn-yes-${q.step}" onclick="processChoice(${q.step}, true)">Yes</button>
-                    <button type="button" class="btn btn-no" id="btn-no-${q.step}" onclick="processChoice(${q.step}, false)">No</button>
-                </div>
-            </div>
-        `;
-        container.appendChild(card);
+function focusEditorTextField(fieldId) {
+    const element = document.getElementById(fieldId);
+    if (!element) return;
+    placeCaretAtEnd(element);
+    console.log('[HHS DEBUG] focusEditorTextField', {
+        fieldId,
+        activeElementId: document.activeElement ? document.activeElement.id : null,
+        value: element.value,
+        selectionStart: typeof element.selectionStart === 'number' ? element.selectionStart : null,
+        selectionEnd: typeof element.selectionEnd === 'number' ? element.selectionEnd : null
     });
 }
 
-function handleUnifiedAddStepClick() {
-    console.log("Add Step button clicked. Preparing to prompt user for insertion position.");
-    // 1. Ensure QUESTIONS_CONFIG is treated as an array even if something went wrong
-    const config = Array.isArray(QUESTIONS_CONFIG) ? QUESTIONS_CONFIG : [];
-    
-    // 2. Safely calculate the next available step number
-    const lastStep = config.length > 0 ? config[config.length - 1].step : 0;
-    const nextEndStepNum = lastStep + 1;
-
-    // 3. Prompt user for position
-    const choice = prompt(
-        `Where would you like to place this new step?\n\n` +
-        `• Press ENTER or type "${nextEndStepNum}" to add it to the VERY END.\n` +
-        `• Type any number between 1 and ${nextEndStepNum} to INSERT it in-between existing steps.`
-    );
-
-    if (choice === null) return; // User pressed Cancel
-
-    const cleanChoice = choice.trim();
-    if (cleanChoice === "") {
-        // Default to adding to the end if empty
-        openControlPage(false, null, nextEndStepNum);
-        return;
-    }
-
-    const targetPos = parseInt(cleanChoice);
-    
-    // 4. Validate the input
-    if (isNaN(targetPos) || targetPos < 1 || targetPos > nextEndStepNum) {
-        alert("Invalid step position selected. Action cancelled.");
-        return;
-    }
-
-    // 5. Navigate to the Creator View with the calculated position
-    // If the user picked the last step, treat it as a standard "Add to end"
-    if (targetPos === nextEndStepNum) {
-        openControlPage(false, null, null); 
-    } else {
-        openControlPage(false, null, targetPos);
-    }
+function getSelectionRange(element) {
+    return {
+        start: typeof element.selectionStart === 'number' ? element.selectionStart : 0,
+        end: typeof element.selectionEnd === 'number' ? element.selectionEnd : 0
+    };
 }
 
-function deleteExistingStep(stepNum) {
-    const confirmation = confirm(`Are you absolutely sure you want to delete Step #${stepNum}?\nThis will remove its trial criteria entirely and automatically fix the routing flow mapping layout for all remaining steps.`);
-    if (!confirmation) return;
-    const targetIndex = QUESTIONS_CONFIG.findIndex(q => q.step === stepNum);
-    if (targetIndex === -1) return;
-    QUESTIONS_CONFIG.splice(targetIndex, 1);
-    QUESTIONS_CONFIG.sort((a, b) => a.step - b.step);
-    QUESTIONS_CONFIG.forEach((q, idx) => {
-        q.step = idx + 1;
-        q.ifNoGoToStep = (idx < QUESTIONS_CONFIG.length - 1) ? (idx + 2) : null;
+function setSelectionRange(element, start, end) {
+    if (!element || typeof element.setSelectionRange !== 'function') return;
+    element.setSelectionRange(start, end);
+}
+
+function applyTextInputMutation(element, insertedText, deleteBackward = false, deleteForward = false) {
+    if (!element) return;
+    const currentValue = typeof element.value === 'string' ? element.value : '';
+    const bounds = getSelectionRange(element);
+    let start = bounds.start;
+    let end = bounds.end;
+
+    if (deleteBackward && start === end && start > 0) {
+        start -= 1;
+    }
+    if (deleteForward && start === end && end < currentValue.length) {
+        end += 1;
+    }
+
+    const nextValue = currentValue.slice(0, start) + insertedText + currentValue.slice(end);
+    element.value = nextValue;
+    const nextCaret = start + insertedText.length;
+    setSelectionRange(element, nextCaret, nextCaret);
+}
+
+function bindTextAreaEditing(element) {
+    if (!element || element.dataset.hhsTextEditBound === 'true') return;
+    element.dataset.hhsTextEditBound = 'true';
+
+    element.addEventListener('keydown', (event) => {
+        console.log('[HHS DEBUG] field:manualKeydown', {
+            id: element.id,
+            key: event.key,
+            valueBefore: element.value,
+            selection: getSelectionRange(element),
+            activeElementId: document.activeElement ? document.activeElement.id : null
+        });
+
+        if (event.ctrlKey || event.metaKey || event.altKey) {
+            return;
+        }
+
+        if (event.key.length === 1) {
+            event.preventDefault();
+            applyTextInputMutation(element, event.key);
+            return;
+        }
+
+        if (event.key === 'Backspace') {
+            event.preventDefault();
+            applyTextInputMutation(element, '', true, false);
+            return;
+        }
+
+        if (event.key === 'Delete') {
+            event.preventDefault();
+            applyTextInputMutation(element, '', false, true);
+            return;
+        }
+
+        if (event.key === 'Enter' && element.id !== 'newTitle') {
+            event.preventDefault();
+            applyTextInputMutation(element, '\n');
+        }
     });
-    commitDatabaseChangesToDisk();
-    buildWorkflowUI();
+
+    element.addEventListener('paste', (event) => {
+        const text = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
+        console.log('[HHS DEBUG] field:manualPaste', {
+            id: element.id,
+            pasteLength: text.length,
+            valueBefore: element.value,
+            selection: getSelectionRange(element)
+        });
+        if (!text) return;
+        event.preventDefault();
+        applyTextInputMutation(element, text);
+    });
+
+    element.addEventListener('input', () => {
+        console.log('[HHS DEBUG] field:manualInput', {
+            id: element.id,
+            valueAfter: element.value,
+            activeElementId: document.activeElement ? document.activeElement.id : null
+        });
+    });
+
+    element.addEventListener('pointerdown', () => {
+        window.setTimeout(() => focusEditorTextField(element.id), 0);
+    });
 }
-
-function processChoice(stepNum, isYes) {
-    const config = QUESTIONS_CONFIG.find(q => q.step === stepNum);
-    document.getElementById(`btn-yes-${stepNum}`).classList.toggle('selected', isYes);
-    document.getElementById(`btn-no-${stepNum}`).classList.toggle('selected', !isYes);
-    clearDownstreamCards(stepNum);
-
-    if (isYes) {
-        displayTrialPayload(config.trials, config.ifNoGoToStep);
-    } else {
-        hideResultsPanel();
-        if (config.ifNoGoToStep) {
-            activateStepCard(config.ifNoGoToStep);
-        } else {
-            alert("Protocol processing complete. No further actions required.");
-        }
-    }
-}
-
-function displayTrialPayload(trialsArray, nextStepPointer) {
-    const resultsCard = document.getElementById('cardResults');
-    const contentArea = document.getElementById('resultsContent');
-    const continueBtn = document.getElementById('continueBtn');
-    const badge = document.getElementById('matchBadge');
-    
-    currentStepTarget = nextStepPointer;
-    badge.textContent = `${trialsArray ? trialsArray.length : 0} Target Trial Match(es)`;
-
-    window.activeMatchesRuntimeCache = trialsArray || [];
-
-    if(!trialsArray || trialsArray.length === 0) {
-        contentArea.innerHTML = `<div class="trial-panel">No active open trial profiles map directly to this setting.</div>`;
-    } else {
-        contentArea.innerHTML = trialsArray.map((trial, index) => `
-            <div class="trial-panel" style="margin-bottom: 15px; padding: 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
-                <div class="trial-title-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <span class="trial-name" style="font-weight: bold; font-size: 16px; color: #1e3a8a;">${trial.name}</span>
-                    <span class="trial-contact" style="font-size: 13px; color: #64748b;">${trial.contact}</span>
-                </div>
-                <div class="trial-desc" style="font-size: 14px; color: #334155; margin-bottom: 10px;">${trial.desc}</div>
-                
-                ${trial.criteria && trial.criteria.length > 0 ? `
-                    <ul class="trial-crit-list" style="margin-bottom: 10px; padding-left: 20px;">
-                        ${trial.criteria.map(c => `<li style="font-size: 13px; color: #475569; margin-bottom: 2px;">${c}</li>`).join('')}
-                    </ul>
-                ` : ''}
-
-                ${(trial.pdfData || trial.pdfPath) ? `
-                    <div class="pdf-action-block" style="margin-top: 12px; border-top: 1px dashed #cbd5e1; padding-top: 10px;">
-                        <button type="button" class="ctrl-btn" style="background: #2563eb; color: white; padding: 8px 14px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;" onclick="openFullscreenPdfViewer(${index})">
-                            📄 View Full Screen Protocol Document
-                        </button>
-                    </div>
-                ` : ''}
-            </div>
-        `).join('');
-    }
-    resultsCard.classList.remove('hidden');
-    continueBtn.classList.toggle('hidden', nextStepPointer === null);
-}
-
-// Overlay Framework Handlers
-window.openFullscreenPdfViewer = async function(cachedIndex) {
-    const trialObj = window.activeMatchesRuntimeCache ? window.activeMatchesRuntimeCache[cachedIndex] : null;
-    
-    if (!trialObj || (!trialObj.pdfData && !trialObj.pdfPath)) {
-        alert("Execution Error: No protocol asset mapped for this entry.");
-        return;
-    }
-
-    const overlay = document.getElementById('fullscreenPdfOverlay');
-    const frame = document.getElementById('fullscreenPdfFrame');
-    const titleLabel = document.getElementById('fullscreenPdfTitle');
-    
-    if (overlay && frame && titleLabel) {
-        titleLabel.textContent = `Protocol Reference Map — ${trialObj.name}`;
-        
-        if (trialObj.pdfPath) {
-            const result = await window.electronAPI.readPdfFile(trialObj.pdfPath);
-            if (result.success) {
-                // FIX 2: Render backend data directly into iframe src instead of attempting broken frontend Buffer transformations
-                frame.src = result.data; 
-            } else {
-                alert("Error loading PDF file: " + result.error);
-                return;
-            }
-        } else {
-            frame.src = trialObj.pdfData;
-        }
-        
-        overlay.style.display = 'flex';
-    }
-};
-
-window.closeFullscreenPdfViewer = function() {
-    const overlay = document.getElementById('fullscreenPdfOverlay');
-    const frame = document.getElementById('fullscreenPdfFrame');
-    if (overlay && frame) {
-        overlay.style.display = 'none';
-        frame.src = "";
-    }
-};
 
 function openControlPage(isEditMode = false, targetStepId = null, insertionPosition = null) {
+    console.log('[HHS DEBUG] openControlPage', { isEditMode, targetStepId, insertionPosition, stepCount: Array.isArray(QUESTIONS_CONFIG) ? QUESTIONS_CONFIG.length : 0 });
     document.getElementById('screeningView').classList.add('hidden');
     document.getElementById('creatorView').classList.remove('hidden');
-    
+
     clearDraftOptionForm();
+
+    const creatorFields = ['newTitle', 'newPrompt', 'tName', 'tContact', 'tDesc', 'bulletInput', 'commitTrialBtn', 'formSubmitBtn'];
+    creatorFields.forEach(id => {
+        const element = document.getElementById(id);
+        if (!element) return;
+        element.removeAttribute('readonly');
+        element.removeAttribute('disabled');
+    });
 
     if (isEditMode && targetStepId !== null) {
         editingStepNumber = targetStepId;
@@ -246,14 +154,20 @@ function openControlPage(isEditMode = false, targetStepId = null, insertionPosit
         document.getElementById('formSubmitBtn').textContent = "Save and Update Protocol Step & Options";
 
         const stepData = QUESTIONS_CONFIG.find(q => q.step === targetStepId);
+        if (!stepData) {
+            console.error('[HHS DEBUG] openControlPage:stepDataMissing');
+            closeControlPage();
+            return;
+        }
         document.getElementById('autoStepBadge').textContent = `Step #${targetStepId}`;
         document.getElementById('autoStepBadge').dataset.stepval = targetStepId;
-        document.getElementById('newTitle').value = stepData.title;
-        document.getElementById('newPrompt').value = stepData.prompt;
-
+        setEditableFieldValue('newTitle', stepData.title);
+        setEditableFieldValue('newPrompt', stepData.prompt);
         stagedTrialsArray = stepData.trials ? JSON.parse(JSON.stringify(stepData.trials)) : [];
     } else {
         editingStepNumber = null;
+        setEditableFieldValue('newTitle', '');
+        setEditableFieldValue('newPrompt', '');
         document.getElementById('pageViewModeTitle').textContent = "Protocol Stage Configurator";
         document.getElementById('managementActionLabel').textContent = "Create";
         document.getElementById('formSubmitBtn').textContent = "Save Complete Step with Options";
@@ -269,20 +183,52 @@ function openControlPage(isEditMode = false, targetStepId = null, insertionPosit
             document.getElementById('routingEngineHelperText').textContent = "The system automatically links this new step into the end of your protocol chain.";
             document.getElementById('autoStepBadge').dataset.isInsertion = "false";
         }
-        
         document.getElementById('autoStepBadge').textContent = `Step #${assignedPositionNum}`;
         document.getElementById('autoStepBadge').dataset.stepval = assignedPositionNum;
-        
         stagedTrialsArray = [];
     }
-    
+
     renderQueuedTrialsList();
+
+    // FOCUS TARGET DEBUGGING
+    const initialField = document.getElementById('newTitle') || document.getElementById('tName');
+    
+    if (initialField) {
+        // Send status to VS Code terminal
+        if (window.electronAPI?.send) {
+            window.electronAPI.send('hhs-focus-log', {
+                timestamp: new Date().toISOString(),
+                target: initialField.id,
+                activeElement: document.activeElement?.id || 'none',
+                isFocused: document.activeElement === initialField
+            });
+        }
+
+        placeCaretAtEnd(initialField);
+        
+        window.setTimeout(() => {
+            focusEditorTextField(initialField.id);
+            
+            // Send final status to VS Code terminal
+            if (window.electronAPI?.send) {
+                window.electronAPI.send('hhs-focus-log', {
+                    timestamp: new Date().toISOString(),
+                    event: 'AFTER_TIMEOUT',
+                    target: initialField.id,
+                    activeElement: document.activeElement?.id || 'none',
+                    isFocused: document.activeElement === initialField
+                });
+            }
+        }, 250);
+    }
 }
 
 function closeControlPage() {
     document.getElementById('creatorView').classList.add('hidden');
     document.getElementById('screeningView').classList.remove('hidden');
-    document.querySelectorAll('#creatorView input, #creatorView textarea').forEach(el => el.value = "");
+    document.querySelectorAll('#creatorView input, #creatorView textarea').forEach(el => {
+        el.value = "";
+    });
     delete document.getElementById('autoStepBadge').dataset.isInsertion;
     stagedTrialsArray = [];
     activeBulletPointsArr = [];
@@ -297,7 +243,9 @@ function closeControlPage() {
 function addBulletPointToDraft() {
     const field = document.getElementById('bulletInput');
     const rawValue = field.value.trim();
-    if(!rawValue) return;
+    if (!rawValue) return;
+
+    console.log('[HHS DEBUG] addBulletPointToDraft', { editingBulletIndex, rawValue });
 
     if (editingBulletIndex !== null) {
         activeBulletPointsArr[editingBulletIndex] = rawValue;
@@ -306,7 +254,7 @@ function addBulletPointToDraft() {
     } else {
         activeBulletPointsArr.push(rawValue);
     }
-    
+
     field.value = "";
     renderBulletDraftPreview();
 }
@@ -326,6 +274,7 @@ function renderBulletDraftPreview() {
 }
 
 function editDraftBullet(index) {
+    console.log('[HHS DEBUG] editDraftBullet', { index, currentValue: activeBulletPointsArr[index] });
     editingBulletIndex = index;
     const field = document.getElementById('bulletInput');
     if (field) {
@@ -336,6 +285,7 @@ function editDraftBullet(index) {
 }
 
 function removeDraftBullet(index) {
+    console.log('[HHS DEBUG] removeDraftBullet', { index, currentValue: activeBulletPointsArr[index] });
     if (editingBulletIndex === index) {
         editingBulletIndex = null;
         document.getElementById('bulletInput').value = "";
@@ -346,6 +296,7 @@ function removeDraftBullet(index) {
 }
 
 function editOptionFromStepQueue(index) {
+    console.log('[HHS DEBUG] editOptionFromStepQueue', { index, trial: stagedTrialsArray[index] });
     editingTrialIndex = index;
     const trial = stagedTrialsArray[index];
 
@@ -357,14 +308,13 @@ function editOptionFromStepQueue(index) {
     document.getElementById('tName').value = trial.name;
     document.getElementById('tContact').value = trial.contact;
     document.getElementById('tDesc').value = trial.desc;
-    
+
     activeBulletPointsArr = trial.criteria ? [...trial.criteria] : [];
     renderBulletDraftPreview();
 
-    // FIX 3: Cache and resolve files safely from base64 data OR mapped physical file system paths
     stagedPdfData = trial.pdfData || null;
     stagedPdfPath = trial.pdfPath || null;
-    
+
     const pdfViewer = document.getElementById('pdfViewer');
     if (pdfViewer) {
         if (stagedPdfData) {
@@ -390,12 +340,21 @@ function commitOptionToStepQueue() {
     const contact = document.getElementById('tContact').value.trim() || "N/A";
     const desc = document.getElementById('tDesc').value.trim() || "No descriptive notes recorded.";
 
+    console.log('[HHS DEBUG] commitOptionToStepQueue:start', {
+        editingTrialIndex,
+        name,
+        contact,
+        desc,
+        bulletCount: activeBulletPointsArr.length,
+        hasPdfData: !!stagedPdfData,
+        hasPdfPath: !!stagedPdfPath
+    });
+
     if (!name) {
         alert("To attach a trial option block, you must input a 'Trial Program Name'.");
         return;
     }
 
-    // FIX 4: Explicitly preserve trial.pdfPath so editing imported data doesn't wipe out files
     const compiledTrialPayload = {
         name: name,
         contact: contact,
@@ -411,11 +370,16 @@ function commitOptionToStepQueue() {
         stagedTrialsArray.push(compiledTrialPayload);
     }
 
+    console.log('[HHS DEBUG] commitOptionToStepQueue:queuedTrials', {
+        total: stagedTrialsArray.length,
+        editingTrialIndex,
+        lastTrial: stagedTrialsArray[stagedTrialsArray.length - 1]
+    });
+
     clearDraftOptionForm();
     renderQueuedTrialsList();
 }
 
-// FIX 5: Unified, cleanly combined render function featuring toggleable criteria maps
 function renderQueuedTrialsList() {
     const container = document.getElementById('queuedTrialsContainer');
     if (!container) return;
@@ -429,11 +393,9 @@ function renderQueuedTrialsList() {
             <div class="queued-item-meta">
                 <strong>${trial.name}</strong> <span style="color:#64748b; font-size:12px;">(${trial.contact})</span>
                 <div style="font-size:12px; color:#475569; margin-top:2px;">${trial.desc}</div>
-                
                 <div style="font-size:11px; color:#3b82f6; margin-top:4px; cursor:pointer; user-select:none; display:inline-block; font-weight:500;" onclick="toggleInlineCriteria(this, ${index})">
                     • Includes ${trial.criteria ? trial.criteria.length : 0} inclusion bullet points <span class="toggle-arrow" style="font-size:9px; vertical-align:middle; margin-left:2px;">▶</span>
                 </div>
-                
                 <ul id="inline-criteria-${index}" style="display:none; margin-top:6px; margin-bottom:6px; padding-left:20px; font-size:12px; color:#475569; list-style-type:disc; line-height:1.4;">
                     ${(trial.criteria || []).map(c => `<li style="margin-bottom:2px;">${c}</li>`).join('')}
                 </ul>
@@ -455,20 +417,28 @@ function removeOptionFromStepQueue(index) {
 }
 
 function clearDraftOptionForm() {
+    console.log('[HHS DEBUG] clearDraftOptionForm:start', {
+        editingTrialIndex,
+        editingBulletIndex,
+        stagedTrialsCount: stagedTrialsArray.length,
+        activeBulletPointsCount: activeBulletPointsArr.length,
+        stagedPdfData: !!stagedPdfData,
+        stagedPdfPath: !!stagedPdfPath
+    });
     document.getElementById('tName').value = "";
     document.getElementById('tContact').value = "";
     document.getElementById('tDesc').value = "";
     document.getElementById('bulletInput').value = "";
     const fileSelectorInput = document.getElementById('pdfUpload');
     if (fileSelectorInput) fileSelectorInput.value = "";
-    
+
     activeBulletPointsArr = [];
     stagedPdfData = null;
     stagedPdfPath = null;
     editingTrialIndex = null;
     editingBulletIndex = null;
     document.getElementById('bulletPreviewList').innerHTML = "";
-    
+
     const pdfViewer = document.getElementById('pdfViewer');
     if (pdfViewer) {
         pdfViewer.innerHTML = `<p style="color: #64748b; text-align: center; padding-top: 80px;">No document uploaded yet. Select a PDF file above to load the internal workflow previewer.</p>`;
@@ -479,18 +449,50 @@ function clearDraftOptionForm() {
     document.getElementById('trialFormActionHeading').innerHTML = "➕ Add / Draft a Trial Option";
     document.getElementById('commitTrialBtn').textContent = "Attach Option to Step Data Matrix";
     document.getElementById('cancelTrialEditBtn').classList.add('hidden');
+
+    console.log('[HHS DEBUG] clearDraftOptionForm:complete', {
+        tName: document.getElementById('tName')?.value,
+        tContact: document.getElementById('tContact')?.value,
+        tDesc: document.getElementById('tDesc')?.value,
+        bulletInput: document.getElementById('bulletInput')?.value,
+        activeElementId: document.activeElement ? document.activeElement.id : null
+    });
 }
 
 function saveNewStepAndReturn() {
     const computedStep = parseInt(document.getElementById('autoStepBadge').dataset.stepval);
-    const title = document.getElementById('newTitle').value.trim();
-    const prompt = document.getElementById('newPrompt').value.trim();
+    const title = getEditableFieldValue('newTitle');
+    const prompt = getEditableFieldValue('newPrompt');
     const isInsertion = document.getElementById('autoStepBadge').dataset.isInsertion === "true";
+
+    console.log('[HHS DEBUG] saveNewStepAndReturn:start', {
+        editingStepNumber,
+        computedStep,
+        title,
+        prompt,
+        isInsertion,
+        stagedTrialsCount: stagedTrialsArray.length
+    });
 
     if (!title || !prompt) {
         alert("Validation Fault: A Stage Section Title and Clinical Question Prompt description are required parameters.");
         return;
     }
+
+    console.log('[HHS DEBUG] saveNewStepAndReturn:fieldSnapshot', {
+        title,
+        prompt,
+        titleElementState: {
+            disabled: document.getElementById('newTitle')?.disabled,
+            readOnly: document.getElementById('newTitle')?.readOnly,
+            value: document.getElementById('newTitle')?.value
+        },
+        promptElementState: {
+            disabled: document.getElementById('newPrompt')?.disabled,
+            readOnly: document.getElementById('newPrompt')?.readOnly,
+            value: document.getElementById('newPrompt')?.value
+        }
+    });
 
     let stepToFocus = computedStep;
 
@@ -513,15 +515,25 @@ function saveNewStepAndReturn() {
         }
         QUESTIONS_CONFIG.push({ step: computedStep, title, prompt, ifNoGoToStep: null, trials: [...stagedTrialsArray] });
     }
-    
+
     QUESTIONS_CONFIG.sort((a, b) => a.step - b.step);
     QUESTIONS_CONFIG.forEach((q, idx) => {
         q.ifNoGoToStep = (idx < QUESTIONS_CONFIG.length - 1) ? (QUESTIONS_CONFIG[idx + 1].step) : null;
     });
 
+    console.log('[HHS DEBUG] saveNewStepAndReturn:postNormalize', {
+        totalSteps: QUESTIONS_CONFIG.length,
+        firstStep: QUESTIONS_CONFIG[0] ? QUESTIONS_CONFIG[0].step : null,
+        lastStep: QUESTIONS_CONFIG.length > 0 ? QUESTIONS_CONFIG[QUESTIONS_CONFIG.length - 1].step : null,
+        focusedStep: stepToFocus,
+        savedStepSnapshot: QUESTIONS_CONFIG.find(q => q.step === stepToFocus) || null
+    });
+
     commitDatabaseChangesToDisk();
     buildWorkflowUI();
     closeControlPage();
+
+    console.log('[HHS DEBUG] saveNewStepAndReturn:complete', { stepToFocus });
 
     const modifiedCard = document.getElementById(`cardStep-${stepToFocus}`);
     if (modifiedCard) {
@@ -531,93 +543,11 @@ function saveNewStepAndReturn() {
     }
 }
 
-function commitDatabaseChangesToDisk() {
-    const updatedDataString = JSON.stringify(QUESTIONS_CONFIG, null, 2);
-    if (window.electronAPI && window.electronAPI.saveData) {
-        window.electronAPI.saveData(updatedDataString)
-            .then(result => {
-                if (result && !result.success) alert("Automated backend disk write error: " + result.error);
-            });
-    }
-}
-
-function downloadTxtFile() {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(QUESTIONS_CONFIG, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", "questions.txt");
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-}
-
-function triggerTxtImport() {
-    document.getElementById('importTxtInput').click();
-}
-
-function handleTxtImport(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const importedPayload = JSON.parse(e.target.result);
-            
-            // 1. Force a clean state reset
-            QUESTIONS_CONFIG = importedPayload;
-            QUESTIONS_CONFIG.sort((a, b) => a.step - b.step);
-            
-            editingStepNumber = null; // Clear any stale edit locks
-            stagedTrialsArray = [];
-            
-            // 2. Refresh the UI and Persistence
-            commitDatabaseChangesToDisk();
-            buildWorkflowUI();
-            
-            // 3. Explicitly unlock the input focus
-            setTimeout(() => {
-                window.focus();
-                document.body.focus();
-            }, 100);
-            
-        } catch (err) {
-            alert("Import Failed: Invalid JSON format.");
-        }
-    };
-    reader.readAsText(file);
-}
-
-function advanceWorkflow() { if (currentStepTarget) activateStepCard(currentStepTarget); hideResultsPanel(); }
-
-function activateStepCard(stepId) {
-    document.querySelectorAll('.step-card').forEach(c => c.classList.remove('active-card'));
-    const targetCard = document.getElementById(`cardStep-${stepId}`);
-    if (targetCard) { targetCard.classList.remove('hidden'); targetCard.classList.add('active-card'); }
-}
-
-function clearDownstreamCards(fromStepNum) {
-    QUESTIONS_CONFIG.forEach(q => {
-        if (q.step > fromStepNum) {
-            const card = document.getElementById(`cardStep-${q.step}`);
-            if (card) {
-                card.classList.add('hidden'); card.classList.remove('active-card');
-                document.getElementById(`btn-yes-${q.step}`).classList.remove('selected');
-                document.getElementById(`btn-no-${q.step}`).classList.remove('selected');
-            }
-        }
-    });
-    hideResultsPanel();
-}
-
-function hideResultsPanel() { document.getElementById('cardResults').classList.add('hidden'); }
-function resetWorkflowEngine() { buildWorkflowUI(); hideResultsPanel(); }
-
 function toggleContentMode() {
     const mode = document.getElementById('contentModeSwitcher').value;
     const bulletContainer = document.getElementById('bulletModeContainer');
     const pdfContainer = document.getElementById('pdfModeContainer');
-    
+
     if (mode === 'pdf') {
         bulletContainer.classList.add('hidden');
         pdfContainer.classList.remove('hidden');
@@ -630,7 +560,7 @@ function toggleContentMode() {
 function handlePdfUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
         alert("Please select a valid PDF file.");
         return;
@@ -638,7 +568,6 @@ function handlePdfUpload(event) {
 
     const pdfViewer = document.getElementById('pdfViewer');
     if (pdfViewer) {
-        // Fix: Leverage lightning fast sandboxed blob URLs to bypass data size limitations in local UI frames
         const previewUrl = URL.createObjectURL(file);
         pdfViewer.innerHTML = `<iframe src="${previewUrl}" style="width: 100%; height: 350px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
     }
@@ -646,7 +575,7 @@ function handlePdfUpload(event) {
     const reader = new FileReader();
     reader.onload = function(e) {
         stagedPdfData = e.target.result;
-        stagedPdfPath = null; 
+        stagedPdfPath = null;
     };
     reader.readAsDataURL(file);
 }
@@ -654,7 +583,7 @@ function handlePdfUpload(event) {
 function toggleInlineCriteria(element, index) {
     const targetList = document.getElementById(`inline-criteria-${index}`);
     const arrow = element.querySelector('.toggle-arrow');
-    
+
     if (targetList) {
         if (targetList.style.display === 'none') {
             targetList.style.display = 'block';
@@ -665,32 +594,27 @@ function toggleInlineCriteria(element, index) {
         }
     }
 }
-function handleUnifiedAddStepClick() {
-    // Simply display the hidden modal
-    document.getElementById('addStepModal').classList.remove('hidden');
-}
 
 function closeCustomPrompt() {
     document.getElementById('addStepModal').classList.add('hidden');
-    document.getElementById('stepInput').value = ""; // Clear for next time
+    document.getElementById('stepInput').value = "";
 }
 
 function submitCustomPrompt() {
     const val = document.getElementById('stepInput').value;
     const config = Array.isArray(QUESTIONS_CONFIG) ? QUESTIONS_CONFIG : [];
     const nextEndStepNum = config.length > 0 ? config[config.length - 1].step + 1 : 1;
-    
+
     closeCustomPrompt();
-    
-    // Process the input as you did before
+
     if (val === "" || parseInt(val) === nextEndStepNum) {
-        openControlPage(false, null, null); // Add to end
+        openControlPage(false, null, null);
     } else {
         const targetPos = parseInt(val);
         if (isNaN(targetPos) || targetPos < 1 || targetPos > nextEndStepNum) {
             alert("Invalid step position selected.");
         } else {
-            openControlPage(false, null, targetPos); // Insert at position
+            openControlPage(false, null, targetPos);
         }
     }
 }

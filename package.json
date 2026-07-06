@@ -1,6 +1,6 @@
 {
   "name": "hhs-stroke-protocol-engine",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "HHS Clinical Trials and Stroke Protocol Workflow Engine",
   "main": "main.js",
   "scripts": {
@@ -45,7 +45,7 @@
     }
   },
   "dependencies": {
-    "electron-updater": "^6.0.0",
+    "electron-updater": "^6.8.9",
     "pdfjs-dist": "^6.1.200"
   },
   "devDependencies": {

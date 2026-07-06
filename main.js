@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { autoUpdater } = require("electron-updater");
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises; // Use promises for non-blocking I/O
@@ -27,6 +28,10 @@ try {
   console.error('Failed to prepare Electron data directories:', error);
 }
 
+app.on('ready', () => {
+  // Check for updates immediately when the app opens
+  autoUpdater.checkForUpdatesAndNotify();
+});
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200, height: 850,
